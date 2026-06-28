@@ -172,7 +172,7 @@ def create_pedido(
     try:
         return crud.create_pedido(db=db, pedido_data=pedido)
     except Exception as e:
-        # Erros HTTP lançados diretamente pelo crud.py
+        # Erros HTTP lançados diretamente pelo crud
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=403, detail=format_db_error(e))
