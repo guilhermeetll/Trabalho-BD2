@@ -106,14 +106,23 @@ def read_produtos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
 @app.post("/produtos", response_model=schemas.ProdutoResponse, status_code=status.HTTP_201_CREATED)
-def create_produto(produto: schemas.ProdutoCreate, db: Session = Depends(get_db)):
+def create_produto(
+        produto: schemas.ProdutoCreate,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador", "suporte")),
+):
     try:
         return crud.create_produto(db=db, produto=produto)
     except Exception as e:
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
 @app.put("/produtos/{produto_id}", response_model=schemas.ProdutoResponse)
-def update_produto(produto_id: int, produto: schemas.ProdutoUpdate, db: Session = Depends(get_db)):
+def update_produto(
+        produto_id: int,
+        produto: schemas.ProdutoUpdate,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador", "suporte")),
+):
     try:
         db_produto = crud.update_produto(db, produto_id=produto_id, produto=produto)
         if db_produto is None:
@@ -123,9 +132,10 @@ def update_produto(produto_id: int, produto: schemas.ProdutoUpdate, db: Session 
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
 @app.delete("/produtos/{produto_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_produto(produto_id: int,
-                   db: Session = Depends(get_db),
-                   usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+def delete_produto(
+        produto_id: int,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
 ):
     try:
         db_produto = crud.delete_produto(db, produto_id=produto_id)
@@ -137,14 +147,28 @@ def delete_produto(produto_id: int,
 
 # --- CRUD DE PEDIDOS ---
 @app.get("/pedidos", response_model=List[schemas.PedidoResponse])
-def read_pedidos(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_pedidos(
+        skip: int = 0,
+        limit: int = 100,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador", "suporte")),
+):
     try:
         return crud.get_pedidos(db, skip=skip, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=403, detail=format_db_error(e))
 
 @app.post("/pedidos", response_model=schemas.PedidoResponse, status_code=status.HTTP_201_CREATED)
-def create_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
+def create_pedido(
+        pedido: schemas.PedidoCreate,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.get_current_user),
+):
+    if usuario_atual.funcao == "cliente" and pedido.usuario_id != usuario_atual.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Clientes só podem registrar pedidos em nome de si mesmos."
+        )
     try:
         return crud.create_pedido(db=db, pedido_data=pedido)
     except Exception as e:
@@ -155,7 +179,12 @@ def create_pedido(pedido: schemas.PedidoCreate, db: Session = Depends(get_db)):
 
 # --- CRUD DE USUÁRIOS (REQUISITO DA PARTE 2/3) ---
 @app.get("/usuarios", response_model=List[schemas.UsuarioResponse])
-def read_usuarios(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_usuarios(
+        skip: int = 0,
+        limit: int = 100,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador", "suporte")),
+):
     try:
         return crud.get_usuarios(db, skip=skip, limit=limit)
     except Exception as e:
@@ -163,6 +192,18 @@ def read_usuarios(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)
 
 @app.post("/usuarios", response_model=schemas.UsuarioResponse, status_code=status.HTTP_201_CREATED)
 def create_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
+    usuario.funcao = "cliente"
+    try:
+        return crud.create_usuario(db=db, usuario=usuario)
+    except Exception as e:
+        raise HTTPException(status_code=403, detail=format_db_error(e))
+
+@app.post("/usuarios/staff", response_model=schemas.UsuarioResponse, status_code=status.HTTP_201_CREATED)
+def create_usuario_staff(
+        usuario: schemas.UsuarioCreate,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     try:
         return crud.create_usuario(db=db, usuario=usuario)
     except Exception as e:
@@ -170,7 +211,12 @@ def create_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)
 
 # --- LOGS DE AUDITORIA DE SEGURANÇA ---
 @app.get("/logs", response_model=List[schemas.LogAuditoriaResponse])
-def read_logs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_logs(
+        skip: int = 0,
+        limit: int = 100,
+        db: Session = Depends(get_db),
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador", "suporte")),
+):
     try:
         return crud.get_logs_auditoria(db, skip=skip, limit=limit)
     except Exception as e:
@@ -181,7 +227,9 @@ def read_logs(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
 # =====================================================================
 
 @app.get("/backups", response_model=List[str])
-def list_backups():
+def list_backups(
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     """Lista todos os arquivos de backup disponíveis no volume do host."""
     backup_dir = "/app/backups"
     if not os.path.exists(backup_dir):
@@ -190,7 +238,9 @@ def list_backups():
     return sorted(files, reverse=True)
 
 @app.post("/backups/logical")
-def trigger_logical_backup():
+def trigger_logical_backup(
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     """Gera um backup lógico comprimido (.dump) conectando diretamente no banco 'db'."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"backup_lojavirtual_{timestamp}.dump"
@@ -224,7 +274,9 @@ def trigger_logical_backup():
         raise HTTPException(status_code=500, detail=f"Erro no pg_dump: {e.stderr or e.stdout}")
 
 @app.post("/backups/complete")
-def trigger_complete_backup():
+def trigger_complete_backup(
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     """Gera um backup completo do cluster (.sql.gz) contendo as roles e usuários."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"backup_cluster_{timestamp}.sql.gz"
@@ -251,7 +303,10 @@ def trigger_complete_backup():
         raise HTTPException(status_code=500, detail=f"Erro no pg_dumpall: {e.stderr or e.stdout}")
 
 @app.post("/backups/restore")
-def trigger_restore(filename: str):
+def trigger_restore(
+        filename: str,
+        usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
+):
     """Executa a restauração lógica ou completa de banco de dados diretamente via rede."""
     filepath = f"/app/backups/{filename}"
     if not os.path.exists(filepath):
