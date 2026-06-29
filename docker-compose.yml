@@ -63,5 +63,18 @@ services:
       db:
         condition: service_healthy
 
+  loja-virtual:
+    build: ./loja-virtual
+    container_name: loja_virtual_app
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - WDS_SOCKET_PORT=0
+    depends_on:
+      - backend
+    stdin_open: true
+    tty: true
+
 volumes:
   postgres_data:
