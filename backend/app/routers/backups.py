@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.orm import Session
 from typing import List
 import os
 import subprocess
 import datetime
-from .. import auth, models
+from ..database import get_db
+from .. import auth, models, crud
 
 router = APIRouter(tags=["Disaster Recovery"])
 
@@ -26,6 +28,8 @@ def list_backups(
 
 @router.post("/backups/logical")
 def trigger_logical_backup(
+        request: Request,
+        db: Session = Depends(get_db),
         usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
 ):
     """Gera um backup lógico comprimido (.dump) conectando diretamente no banco 'db'."""
@@ -51,6 +55,12 @@ def trigger_logical_backup(
 
     try:
         subprocess.run(cmd, env=env, capture_output=True, text=True, check=True)
+        crud.create_log(
+            db, evento="BACKUP_LOGICO", tabela_afetada="sistema",
+            usuario_id=usuario_atual.id,
+            detalhes=f"Backup lógico '{filename}' gerado por {usuario_atual.email}.",
+            ip_origem=request.client.host,
+        )
         return {
             "status": "sucesso",
             "mensagem": f"Backup lógico individual '{filename}' gerado com sucesso!",
@@ -63,6 +73,8 @@ def trigger_logical_backup(
 
 @router.post("/backups/complete")
 def trigger_complete_backup(
+        request: Request,
+        db: Session = Depends(get_db),
         usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
 ):
     """Gera um backup completo do cluster (.sql.gz) contendo as roles e usuários."""
@@ -81,6 +93,12 @@ def trigger_complete_backup(
 
     try:
         subprocess.run(cmd, env=env, shell=True, capture_output=True, text=True, check=True)
+        crud.create_log(
+            db, evento="BACKUP_COMPLETO", tabela_afetada="sistema",
+            usuario_id=usuario_atual.id,
+            detalhes=f"Backup completo do cluster '{filename}' gerado por {usuario_atual.email}.",
+            ip_origem=request.client.host,
+        )
         return {
             "status": "sucesso",
             "mensagem": f"Backup completo do cluster '{filename}' gerado com sucesso!",
@@ -94,6 +112,8 @@ def trigger_complete_backup(
 @router.post("/backups/restore")
 def trigger_restore(
         filename: str,
+        request: Request,
+        db: Session = Depends(get_db),
         usuario_atual: models.Usuario = Depends(auth.require_role("administrador")),
 ):
     """Executa a restauração lógica ou completa de banco de dados diretamente via rede."""
@@ -135,6 +155,12 @@ def trigger_restore(
         else:
             raise HTTPException(status_code=400, detail="Formato de arquivo inválido. Use arquivos .dump ou .sql.gz")
 
+        crud.create_log(
+            db, evento="RESTORE", tabela_afetada="sistema",
+            usuario_id=usuario_atual.id,
+            detalhes=f"Backup '{filename}' restaurado por {usuario_atual.email}.",
+            ip_origem=request.client.host,
+        )
         return {"status": "sucesso", "mensagem": f"Backup '{filename}' restaurado com total integridade!"}
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Erro de comando do Postgres: {e.stderr or e.stdout}")

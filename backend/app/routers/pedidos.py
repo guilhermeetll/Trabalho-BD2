@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from typing import List
 from ..database import get_db
@@ -23,18 +23,27 @@ def read_pedidos(
 @router.post("/pedidos", response_model=schemas.PedidoResponse, status_code=status.HTTP_201_CREATED)
 def create_pedido(
         pedido: schemas.PedidoCreate,
+        request: Request,
         db: Session = Depends(get_db),
         usuario_atual: models.Usuario = Depends(auth.get_current_user),
 ):
     if usuario_atual.funcao == "cliente" and pedido.usuario_id != usuario_atual.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Clientes só podem registrar pedidos em nome de si mesmos."
+            detail="Clientes só podem registrar pedidos em nome de si mesmos.",
         )
     try:
-        return crud.create_pedido(db=db, pedido_data=pedido)
+        novo_pedido = crud.create_pedido(db=db, pedido_data=pedido)
+        crud.create_log(
+            db,
+            evento="INSERT",
+            tabela_afetada="pedidos",
+            usuario_id=usuario_atual.id,
+            detalhes=f"Pedido #{novo_pedido.id} registrado por {usuario_atual.email} (total: R$ {novo_pedido.total}).",
+            ip_origem=request.client.host,
+        )
+        return novo_pedido
     except Exception as e:
-        # Erros HTTP lançados diretamente pelo crud
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=403, detail=format_db_error(e))
