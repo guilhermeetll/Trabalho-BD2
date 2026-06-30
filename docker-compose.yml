@@ -45,6 +45,7 @@ services:
       - "3000:3000"
     environment:
       - WDS_SOCKET_PORT=0
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - backend
     stdin_open: true

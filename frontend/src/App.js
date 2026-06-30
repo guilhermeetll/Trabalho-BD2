@@ -284,21 +284,22 @@ function App() {
 
   // --- CADASTRO DE NOVOS USUÁRIOS (Tabela usuarios) ---
   const handleCreateUser = async (e) => {
-    e.preventDefault();
-    setActionError(null);
-    setActionSuccess(null);
-    try {
-      const data = await authenticatedFetch('/usuarios', {
-        method: 'POST',
-        body: JSON.stringify(newUser)
-      });
-      setActionSuccess(`Usuário da aplicação '${data.nome}' cadastrado com sucesso!`);
-      setNewUser({ nome: '', email: '', senha_raw: '', funcao: 'cliente', ativo: true });
-      fetchData();
-    } catch (err) {
-      setActionError(err.message);
-    }
-  };
+  e.preventDefault();
+  setActionError(null);
+  setActionSuccess(null);
+  try {
+    const endpoint = newUser.funcao === 'cliente' ? '/usuarios' : '/usuarios/staff';
+    const data = await authenticatedFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(newUser)
+    });
+    setActionSuccess(`Usuário da aplicação '${data.nome}' cadastrado com sucesso!`);
+    setNewUser({ nome: '', email: '', senha_raw: '', funcao: 'cliente', ativo: true });
+    fetchData();
+  } catch (err) {
+    setActionError(err.message);
+  }
+};
 
   // --- GESTÃO DE BACKUP E RESTAURAÇÃO (DISASTER RECOVERY) ---
   const handleTriggerLogicalBackup = async () => {
